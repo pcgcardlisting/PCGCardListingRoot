@@ -7,6 +7,8 @@ interface WatchlistItem {
   setName?: string | null;
   cardNumber?: string | null;
   imageUrl?: string | null;
+  tcgioId?: string | null;
+  rarity?: string | null;
   source: string;
 }
 

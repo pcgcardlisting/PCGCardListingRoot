@@ -9,6 +9,7 @@ export async function GET(
   const { id } = await params;
   const productId = parseInt(id);
   const cardName = req.nextUrl.searchParams.get("name") || "";
+  const tcgioId = req.nextUrl.searchParams.get("tcgioId") || undefined;
 
   if (isNaN(productId)) {
     return NextResponse.json({ error: "Invalid product ID" }, { status: 400 });
@@ -16,7 +17,7 @@ export async function GET(
 
   try {
     const [tcgPrices, priceHistory, ebayData, ebayListings] = await Promise.all([
-      getTCGCardPrices(productId),
+      getTCGCardPrices(productId, tcgioId),
       getTCGPriceHistory(productId),
       getEbayPriceSummary(cardName),
       searchEbayListings(cardName, 6),

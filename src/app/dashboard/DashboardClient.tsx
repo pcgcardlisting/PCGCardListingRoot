@@ -4,6 +4,7 @@ import { signOut } from "next-auth/react";
 import CardSearch from "@/components/CardSearch";
 import CardPricePanel from "@/components/CardPricePanel";
 import Watchlist from "@/components/Watchlist";
+import Top5Widget from "@/components/Top5Widget";
 
 interface User {
   id?: string;
@@ -19,15 +20,19 @@ interface WatchlistItem {
   setName?: string | null;
   cardNumber?: string | null;
   imageUrl?: string | null;
+  tcgioId?: string | null;
+  rarity?: string | null;
   source: string;
 }
 
-interface SelectedCard {
+export interface SelectedCard {
   productId: number;
   name: string;
   imageUrl: string;
   setName?: string;
   number?: string;
+  tcgioId?: string;
+  rarity?: string;
 }
 
 export default function DashboardClient({ user }: { user: User }) {
@@ -35,6 +40,8 @@ export default function DashboardClient({ user }: { user: User }) {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [activeTab, setActiveTab] = useState<"search" | "watchlist">("search");
   const [loadingWatchlist, setLoadingWatchlist] = useState(true);
+  const [pinnedCount, setPinnedCount] = useState(0);
+  const [top5Refresh, setTop5Refresh] = useState(0);
 
   const fetchWatchlist = useCallback(async () => {
     setLoadingWatchlist(true);
@@ -42,16 +49,17 @@ export default function DashboardClient({ user }: { user: User }) {
       const res = await fetch("/api/watchlist");
       const data = await res.json();
       setWatchlist(data.items || []);
-    } catch {
-      /* ignore */
-    } finally {
-      setLoadingWatchlist(false);
-    }
+    } catch { /* ignore */ }
+    finally { setLoadingWatchlist(false); }
   }, []);
 
-  useEffect(() => {
-    fetchWatchlist();
-  }, [fetchWatchlist]);
+  const fetchPinnedCount = useCallback(async () => {
+    const res = await fetch("/api/pinned");
+    const data = await res.json();
+    setPinnedCount((data.pins || []).length);
+  }, []);
+
+  useEffect(() => { fetchWatchlist(); fetchPinnedCount(); }, [fetchWatchlist, fetchPinnedCount]);
 
   async function addToWatchlist(card: SelectedCard) {
     await fetch("/api/watchlist", {
@@ -63,6 +71,8 @@ export default function DashboardClient({ user }: { user: User }) {
         setName: card.setName,
         cardNumber: card.number,
         imageUrl: card.imageUrl,
+        tcgioId: card.tcgioId,
+        rarity: card.rarity,
         source: "tcgplayer",
       }),
     });
@@ -78,8 +88,38 @@ export default function DashboardClient({ user }: { user: User }) {
     fetchWatchlist();
   }
 
-  const isInWatchlist = (cardId: number) =>
-    watchlist.some((w) => w.cardId === String(cardId));
+  async function pinCard(card: SelectedCard) {
+    const res = await fetch("/api/pinned", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cardId: String(card.productId),
+        cardName: card.name,
+        setName: card.setName,
+        cardNumber: card.number,
+        imageUrl: card.imageUrl,
+        tcgioId: card.tcgioId,
+        rarity: card.rarity,
+      }),
+    });
+    if (res.ok) { setTop5Refresh((n) => n + 1); fetchPinnedCount(); }
+    else {
+      const data = await res.json();
+      alert(data.error || "Could not pin card");
+    }
+  }
+
+  async function unpinCard(cardId: string) {
+    await fetch("/api/pinned", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardId }),
+    });
+    setTop5Refresh((n) => n + 1);
+    fetchPinnedCount();
+  }
+
+  const isInWatchlist = (cardId: number) => watchlist.some((w) => w.cardId === String(cardId));
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -97,9 +137,7 @@ export default function DashboardClient({ user }: { user: User }) {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={user.image} alt="" className="w-8 h-8 rounded-full" />
             )}
-            <span className="text-sm text-gray-300 hidden sm:block">
-              {user.name || user.email}
-            </span>
+            <span className="text-sm text-gray-300 hidden sm:block">{user.name || user.email}</span>
           </div>
           <button
             onClick={() => signOut({ callbackUrl: "/" })}
@@ -115,7 +153,7 @@ export default function DashboardClient({ user }: { user: User }) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
             { label: "Watchlist Cards", value: watchlist.length.toString() },
-            { label: "TCGPlayer Cards", value: "20M+" },
+            { label: "Pinned (Top 5)", value: `${pinnedCount}/5` },
             { label: "eBay Listings", value: "Live" },
             { label: "Price Updates", value: "Real-time" },
           ].map((stat) => (
@@ -126,18 +164,34 @@ export default function DashboardClient({ user }: { user: User }) {
           ))}
         </div>
 
+        {/* Top 5 widget — always visible at the top */}
+        <div className="mb-6">
+          <Top5Widget
+            onSelectCard={(pin) =>
+              setSelectedCard({
+                productId: parseInt(pin.cardId),
+                name: pin.cardName,
+                imageUrl: pin.imageUrl || "",
+                setName: pin.setName || undefined,
+                number: pin.cardNumber || undefined,
+                tcgioId: pin.tcgioId || undefined,
+                rarity: pin.rarity || undefined,
+              })
+            }
+            selectedCardId={selectedCard?.productId}
+            refreshTrigger={top5Refresh}
+          />
+        </div>
+
         {/* Main layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: search + watchlist */}
           <div className="lg:col-span-1">
-            {/* Tabs */}
             <div className="flex bg-gray-900 border border-gray-800 rounded-xl p-1 mb-4">
               <button
                 onClick={() => setActiveTab("search")}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === "search"
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-400 hover:text-white"
+                  activeTab === "search" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
                 }`}
               >
                 Search Cards
@@ -145,9 +199,7 @@ export default function DashboardClient({ user }: { user: User }) {
               <button
                 onClick={() => setActiveTab("watchlist")}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === "watchlist"
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-400 hover:text-white"
+                  activeTab === "watchlist" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
                 }`}
               >
                 Watchlist ({watchlist.length})
@@ -156,8 +208,10 @@ export default function DashboardClient({ user }: { user: User }) {
 
             {activeTab === "search" ? (
               <CardSearch
-                onSelectCard={(card) => setSelectedCard(card)}
+                onSelectCard={setSelectedCard}
                 onAddToWatchlist={addToWatchlist}
+                onPinCard={pinCard}
+                pinnedCount={pinnedCount}
                 selectedCardId={selectedCard?.productId}
                 isInWatchlist={isInWatchlist}
               />
@@ -172,6 +226,8 @@ export default function DashboardClient({ user }: { user: User }) {
                     imageUrl: item.imageUrl || "",
                     setName: item.setName || undefined,
                     number: item.cardNumber || undefined,
+                    tcgioId: item.tcgioId || undefined,
+                    rarity: item.rarity || undefined,
                   })
                 }
                 onRemove={removeFromWatchlist}
@@ -187,19 +243,18 @@ export default function DashboardClient({ user }: { user: User }) {
                 card={selectedCard}
                 inWatchlist={isInWatchlist(selectedCard.productId)}
                 onAddToWatchlist={() => addToWatchlist(selectedCard)}
-                onRemoveFromWatchlist={() =>
-                  removeFromWatchlist(String(selectedCard.productId), "tcgplayer")
-                }
+                onRemoveFromWatchlist={() => removeFromWatchlist(String(selectedCard.productId), "tcgplayer")}
+                onPinCard={() => pinCard(selectedCard)}
+                onUnpinCard={() => unpinCard(String(selectedCard.productId))}
+                pinnedCount={pinnedCount}
               />
             ) : (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl h-96 flex flex-col items-center justify-center text-center p-8">
                 <div className="text-5xl mb-4">🃏</div>
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  Select a Card to View Prices
-                </h3>
+                <h3 className="text-xl font-semibold text-white mb-2">Select a Card to View Prices</h3>
                 <p className="text-gray-500 text-sm">
-                  Search for any Pokémon card on the left to see live prices from TCGPlayer and
-                  eBay, along with a 30-day price history chart.
+                  Search for any Pokémon card on the left to see live prices from TCGPlayer and eBay,
+                  along with a 30-day price history chart.
                 </p>
               </div>
             )}

@@ -19,6 +19,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   watchlist     WatchlistItem[]
+  pinnedCards   PinnedCard[]
 }
 
 model Account {
@@ -65,9 +66,29 @@ model WatchlistItem {
   cardNumber String?
   imageUrl   String?
   source     String   @default("tcgplayer")
+  tcgioId    String?
+  rarity     String?
   createdAt  DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, cardId, source])
+}
+
+model PinnedCard {
+  id         String   @id @default(cuid())
+  userId     String
+  cardId     String
+  cardName   String
+  setName    String?
+  cardNumber String?
+  imageUrl   String?
+  tcgioId    String?
+  rarity     String?
+  position   Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cardId])
 }

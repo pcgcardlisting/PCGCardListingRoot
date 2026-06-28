@@ -1,4 +1,8 @@
+// TCGPlayer API integration with pokemon-tcg.io fallback for card search
+// pokemon-tcg.io is a free public API — no key required for basic search
+
 const TCGPLAYER_BASE_URL = "https://api.tcgplayer.com";
+const POKEMON_TCG_IO = "https://api.pokemontcg.io/v2";
 
 let accessToken: string | null = null;
 let tokenExpiry: number = 0;
@@ -34,6 +38,12 @@ export interface TCGCard {
   modifiedOn: string;
   setName?: string;
   number?: string;
+  // pokemon-tcg.io fields
+  tcgioId?: string;
+  supertype?: string;
+  subtypes?: string[];
+  hp?: string;
+  rarity?: string;
 }
 
 export interface TCGPrice {
@@ -46,82 +56,149 @@ export interface TCGPrice {
   subTypeName: string;
 }
 
+// ---------- Main search — uses pokemon-tcg.io (free, real data) ----------
+
 export async function searchTCGCards(query: string, limit = 20): Promise<TCGCard[]> {
+  // First try TCGPlayer if keys are configured
+  if (process.env.TCGPLAYER_PUBLIC_KEY && process.env.TCGPLAYER_PUBLIC_KEY !== "your-tcgplayer-public-key") {
+    try {
+      const token = await getAccessToken();
+      const params = new URLSearchParams({ productName: query, limit: limit.toString(), offset: "0" });
+      const response = await fetch(`${TCGPLAYER_BASE_URL}/v1.39.0/catalog/products?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.results?.length > 0) return data.results;
+      }
+    } catch { /* fall through to pokemon-tcg.io */ }
+  }
+
+  // Always use pokemon-tcg.io as the search engine (free, no key, real data)
+  return searchPokemonTCGio(query, limit);
+}
+
+async function searchPokemonTCGio(query: string, limit: number): Promise<TCGCard[]> {
   try {
-    const token = await getAccessToken();
+    // Search by card name — supports partial matches
     const params = new URLSearchParams({
-      productName: query,
-      limit: limit.toString(),
-      offset: "0",
+      q: `name:"${query}*"`,
+      pageSize: limit.toString(),
+      orderBy: "-set.releaseDate",
+      select: "id,name,images,set,number,supertype,subtypes,hp,rarity,tcgplayer",
     });
 
-    const response = await fetch(
-      `${TCGPLAYER_BASE_URL}/v1.39.0/catalog/products?${params}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (process.env.POKEMON_TCG_API_KEY) {
+      headers["X-Api-Key"] = process.env.POKEMON_TCG_API_KEY;
+    }
 
-    if (!response.ok) return getMockTCGCards(query);
+    const response = await fetch(`${POKEMON_TCG_IO}/cards?${params}`, { headers });
+
+    if (!response.ok) return [];
 
     const data = await response.json();
-    return data.results || [];
+    const cards: TCGCard[] = (data.data || []).map((card: PokemonTCGioCard, idx: number) => ({
+      productId: hashCardId(card.id) + idx,
+      tcgioId: card.id,
+      name: card.name,
+      imageUrl: card.images?.large || card.images?.small || "",
+      categoryId: 1,
+      groupId: 100,
+      url: card.tcgplayer?.url || `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(card.name)}`,
+      modifiedOn: new Date().toISOString(),
+      setName: card.set?.name,
+      number: card.number,
+      supertype: card.supertype,
+      subtypes: card.subtypes,
+      hp: card.hp,
+      rarity: card.rarity,
+    }));
+
+    return cards;
   } catch {
-    return getMockTCGCards(query);
+    return [];
   }
 }
 
-export async function getTCGCardPrices(productId: number): Promise<TCGPrice[]> {
-  try {
-    const token = await getAccessToken();
-    const response = await fetch(
-      `${TCGPLAYER_BASE_URL}/v1.39.0/pricing/product/${productId}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+interface PokemonTCGioCard {
+  id: string;
+  name: string;
+  images?: { small?: string; large?: string };
+  set?: { name?: string; releaseDate?: string };
+  number?: string;
+  supertype?: string;
+  subtypes?: string[];
+  hp?: string;
+  rarity?: string;
+  tcgplayer?: { url?: string; prices?: Record<string, { low?: number; mid?: number; high?: number; market?: number }> };
+}
 
-    if (!response.ok) return getMockPrices(productId);
-
-    const data = await response.json();
-    return data.results || [];
-  } catch {
-    return getMockPrices(productId);
+// Deterministic numeric ID from a string card ID like "base1-4"
+function hashCardId(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
   }
+  return Math.abs(hash);
+}
+
+// ---------- Price fetching ----------
+
+export async function getTCGCardPrices(productId: number, tcgioId?: string): Promise<TCGPrice[]> {
+  // Try to get prices from pokemon-tcg.io if we have the tcgioId
+  if (tcgioId) {
+    try {
+      const headers: Record<string, string> = {};
+      if (process.env.POKEMON_TCG_API_KEY) headers["X-Api-Key"] = process.env.POKEMON_TCG_API_KEY;
+      const res = await fetch(`${POKEMON_TCG_IO}/cards/${tcgioId}?select=id,tcgplayer`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        const prices = data.data?.tcgplayer?.prices;
+        if (prices) {
+          return Object.entries(prices).map(([subtype, p]: [string, unknown]) => {
+            const price = p as { low?: number; mid?: number; high?: number; market?: number; directLow?: number };
+            return {
+              productId,
+              subTypeName: subtype.charAt(0).toUpperCase() + subtype.slice(1).replace(/([A-Z])/g, " $1"),
+              lowPrice: price.low ?? null,
+              midPrice: price.mid ?? null,
+              highPrice: price.high ?? null,
+              marketPrice: price.market ?? null,
+              directLowPrice: price.directLow ?? null,
+            };
+          });
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // TCGPlayer API fallback
+  if (process.env.TCGPLAYER_PUBLIC_KEY && process.env.TCGPLAYER_PUBLIC_KEY !== "your-tcgplayer-public-key") {
+    try {
+      const token = await getAccessToken();
+      const response = await fetch(`${TCGPLAYER_BASE_URL}/v1.39.0/pricing/product/${productId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.results?.length > 0) return data.results;
+      }
+    } catch { /* fall through */ }
+  }
+
+  return getMockPrices(productId);
 }
 
 export async function getTCGPriceHistory(productId: number): Promise<{ date: string; price: number }[]> {
-  // TCGPlayer doesn't expose historical price endpoints in public API
-  // Return mock data showing a realistic price trend
   return getMockPriceHistory();
-}
-
-// Mock data using real Pokemon TCG card images from pokemon-tcg.io (free, no key needed)
-const MOCK_CARDS: TCGCard[] = [
-  { productId: 1001, name: "Charizard", imageUrl: "https://images.pokemontcg.io/base1/4_hires.png", categoryId: 1, groupId: 100, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Base Set", number: "4/102" },
-  { productId: 1002, name: "Pikachu", imageUrl: "https://images.pokemontcg.io/base1/58_hires.png", categoryId: 1, groupId: 100, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Base Set", number: "58/102" },
-  { productId: 1003, name: "Blastoise", imageUrl: "https://images.pokemontcg.io/base1/2_hires.png", categoryId: 1, groupId: 100, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Base Set", number: "2/102" },
-  { productId: 1004, name: "Mewtwo", imageUrl: "https://images.pokemontcg.io/base1/10_hires.png", categoryId: 1, groupId: 101, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Base Set", number: "10/102" },
-  { productId: 1005, name: "Venusaur", imageUrl: "https://images.pokemontcg.io/base1/15_hires.png", categoryId: 1, groupId: 101, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Base Set", number: "15/102" },
-  { productId: 1006, name: "Pikachu VMAX", imageUrl: "https://images.pokemontcg.io/swsh4/44_hires.png", categoryId: 1, groupId: 102, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Vivid Voltage", number: "44/185" },
-  { productId: 1007, name: "Charizard VMAX", imageUrl: "https://images.pokemontcg.io/swsh3/20_hires.png", categoryId: 1, groupId: 102, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Darkness Ablaze", number: "20/189" },
-  { productId: 1008, name: "Mewtwo GX", imageUrl: "https://images.pokemontcg.io/sm9/31_hires.png", categoryId: 1, groupId: 103, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Team Up", number: "31/181" },
-  { productId: 1009, name: "Eevee", imageUrl: "https://images.pokemontcg.io/base1/51_hires.png", categoryId: 1, groupId: 100, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Base Set", number: "51/102" },
-  { productId: 1010, name: "Gengar", imageUrl: "https://images.pokemontcg.io/base1/5_hires.png", categoryId: 1, groupId: 100, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Base Set", number: "5/102" },
-  { productId: 1011, name: "Lugia", imageUrl: "https://images.pokemontcg.io/neo2/9_hires.png", categoryId: 1, groupId: 104, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Neo Discovery", number: "9/75" },
-  { productId: 1012, name: "Umbreon", imageUrl: "https://images.pokemontcg.io/neo2/13_hires.png", categoryId: 1, groupId: 104, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Neo Discovery", number: "13/75" },
-  { productId: 1013, name: "Rayquaza EX", imageUrl: "https://images.pokemontcg.io/exa/101_hires.png", categoryId: 1, groupId: 105, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "EX Deoxys", number: "101/107" },
-  { productId: 1014, name: "Charizard ex", imageUrl: "https://images.pokemontcg.io/sv3/6_hires.png", categoryId: 1, groupId: 106, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Obsidian Flames", number: "6/197" },
-  { productId: 1015, name: "Pikachu ex", imageUrl: "https://images.pokemontcg.io/sv1/85_hires.png", categoryId: 1, groupId: 106, url: "https://www.tcgplayer.com", modifiedOn: new Date().toISOString(), setName: "Scarlet & Violet", number: "85/198" },
-];
-
-function getMockTCGCards(query: string): TCGCard[] {
-  const q = query.toLowerCase();
-  const filtered = MOCK_CARDS.filter((c) => c.name.toLowerCase().includes(q));
-  return filtered.length > 0 ? filtered : MOCK_CARDS;
 }
 
 function getMockPrices(productId: number): TCGPrice[] {
   const base = (productId % 500) + 10;
   return [
-    { productId, lowPrice: base * 0.8, midPrice: base, highPrice: base * 1.5, marketPrice: base * 1.05, directLowPrice: base * 0.85, subTypeName: "Normal" },
-    { productId, lowPrice: base * 2, midPrice: base * 2.5, highPrice: base * 4, marketPrice: base * 2.8, directLowPrice: base * 2.1, subTypeName: "Holofoil" },
+    { productId, lowPrice: +(base * 0.8).toFixed(2), midPrice: +base.toFixed(2), highPrice: +(base * 1.5).toFixed(2), marketPrice: +(base * 1.05).toFixed(2), directLowPrice: +(base * 0.85).toFixed(2), subTypeName: "Normal" },
+    { productId, lowPrice: +(base * 2).toFixed(2), midPrice: +(base * 2.5).toFixed(2), highPrice: +(base * 4).toFixed(2), marketPrice: +(base * 2.8).toFixed(2), directLowPrice: +(base * 2.1).toFixed(2), subTypeName: "Holofoil" },
   ];
 }
 

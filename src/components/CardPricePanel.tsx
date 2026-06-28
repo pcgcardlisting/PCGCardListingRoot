@@ -17,6 +17,8 @@ interface Card {
   imageUrl: string;
   setName?: string;
   number?: string;
+  tcgioId?: string;
+  rarity?: string;
 }
 
 interface TCGPrice {
@@ -48,9 +50,12 @@ interface Props {
   inWatchlist: boolean;
   onAddToWatchlist: () => void;
   onRemoveFromWatchlist: () => void;
+  onPinCard: () => void;
+  onUnpinCard: () => void;
+  pinnedCount: number;
 }
 
-export default function CardPricePanel({ card, inWatchlist, onAddToWatchlist, onRemoveFromWatchlist }: Props) {
+export default function CardPricePanel({ card, inWatchlist, onAddToWatchlist, onRemoveFromWatchlist, onPinCard, onUnpinCard, pinnedCount }: Props) {
   const [data, setData] = useState<PriceData | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"tcg" | "ebay" | "history">("tcg");
@@ -59,7 +64,9 @@ export default function CardPricePanel({ card, inWatchlist, onAddToWatchlist, on
     let cancelled = false;
     setLoading(true);
     setData(null);
-    fetch(`/api/cards/${card.productId}/prices?name=${encodeURIComponent(card.name)}`)
+    const params = new URLSearchParams({ name: card.name });
+    if (card.tcgioId) params.set("tcgioId", card.tcgioId);
+    fetch(`/api/cards/${card.productId}/prices?${params}`)
       .then((r) => r.json())
       .then((d) => { if (!cancelled) setData(d); })
       .catch(() => {})
@@ -100,16 +107,30 @@ export default function CardPricePanel({ card, inWatchlist, onAddToWatchlist, on
             )}
           </div>
         </div>
-        <button
-          onClick={inWatchlist ? onRemoveFromWatchlist : onAddToWatchlist}
-          className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-            inWatchlist
-              ? "bg-yellow-500/20 text-yellow-400 border border-yellow-700 hover:bg-red-900/30 hover:text-red-300 hover:border-red-700"
-              : "bg-gray-800 text-gray-300 border border-gray-700 hover:bg-yellow-500/20 hover:text-yellow-400 hover:border-yellow-700"
-          }`}
-        >
-          {inWatchlist ? "★ Watching" : "☆ Watch"}
-        </button>
+        <div className="flex flex-col gap-2 flex-shrink-0">
+          <button
+            onClick={inWatchlist ? onRemoveFromWatchlist : onAddToWatchlist}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium transition-colors ${
+              inWatchlist
+                ? "bg-yellow-500/20 text-yellow-400 border border-yellow-700 hover:bg-red-900/30 hover:text-red-300 hover:border-red-700"
+                : "bg-gray-800 text-gray-300 border border-gray-700 hover:bg-yellow-500/20 hover:text-yellow-400 hover:border-yellow-700"
+            }`}
+          >
+            {inWatchlist ? "★ Watching" : "☆ Watch"}
+          </button>
+          <button
+            onClick={onPinCard}
+            disabled={pinnedCount >= 5}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium transition-colors ${
+              pinnedCount >= 5
+                ? "bg-gray-800/50 text-gray-600 border border-gray-800 cursor-not-allowed"
+                : "bg-gray-800 text-gray-300 border border-gray-700 hover:bg-orange-900/30 hover:text-orange-300 hover:border-orange-700"
+            }`}
+            title={pinnedCount >= 5 ? "Top 5 is full" : "Pin to Top 5"}
+          >
+            📌 {pinnedCount >= 5 ? "Full" : "Pin"}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
