@@ -20,6 +20,9 @@ model User {
   sessions      Session[]
   watchlist     WatchlistItem[]
   pinnedCards   PinnedCard[]
+  listings      Listing[]
+  buyerRooms    ChatRoom[]  @relation("BuyerRooms")
+  messages      Message[]
 }
 
 model Account {
@@ -55,6 +58,54 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model Listing {
+  id          String   @id @default(cuid())
+  userId      String
+  cardId      String
+  cardName    String
+  setName     String?
+  cardNumber  String?
+  imageUrl    String?
+  tcgioId     String?
+  rarity      String?
+  listingType String   @default("sell") // "sell" | "trade"
+  price       Float?
+  wantedCard  String?
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatRooms ChatRoom[]
+
+  @@index([isActive, createdAt])
+}
+
+model ChatRoom {
+  id        String    @id @default(cuid())
+  listingId String
+  buyerId   String
+  createdAt DateTime  @default(now())
+
+  listing  Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyer    User      @relation("BuyerRooms", fields: [buyerId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@unique([listingId, buyerId])
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  roomId     String
+  senderId   String
+  content    String
+  createdAt  DateTime @default(now())
+
+  room   ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
 }
 
 model WatchlistItem {
