@@ -108,6 +108,17 @@ export async function getEbayPriceSummary(query: string): Promise<{
   }
 }
 
+const EBAY_MOCK_IMAGES = [
+  "https://images.pokemontcg.io/base1/4_hires.png",
+  "https://images.pokemontcg.io/base1/58_hires.png",
+  "https://images.pokemontcg.io/base1/2_hires.png",
+  "https://images.pokemontcg.io/base1/10_hires.png",
+  "https://images.pokemontcg.io/swsh3/20_hires.png",
+  "https://images.pokemontcg.io/swsh4/44_hires.png",
+  "https://images.pokemontcg.io/sv3/6_hires.png",
+  "https://images.pokemontcg.io/neo2/9_hires.png",
+];
+
 function getMockEbayListings(query: string): EbaySearchResult {
   const listings: EbayListing[] = Array.from({ length: 8 }, (_, i) => {
     const price = (20 + Math.random() * 200).toFixed(2);
@@ -115,7 +126,7 @@ function getMockEbayListings(query: string): EbaySearchResult {
       itemId: `ebay_${i + 1}`,
       title: `${query} Pokemon Card ${["PSA 10", "PSA 9", "BGS 9.5", "Ungraded", "Near Mint"][i % 5]}`,
       price: { value: price, currency: "USD" },
-      image: { imageUrl: `https://placehold.co/200x280/0f3460/ffffff?text=${encodeURIComponent(query)}` },
+      image: { imageUrl: EBAY_MOCK_IMAGES[i % EBAY_MOCK_IMAGES.length] },
       itemWebUrl: `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`,
       condition: ["Brand New", "Like New", "Very Good", "Good"][i % 4],
       seller: { username: `seller_${i + 1}`, feedbackScore: 98 + (i % 3) },
