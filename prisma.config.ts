@@ -9,6 +9,11 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
+    // For Turso: set DATABASE_URL=libsql://... and TURSO_AUTH_TOKEN=...
+    // For local: set DATABASE_URL=file:./dev.db (no auth token needed)
     url: process.env["DATABASE_URL"],
+    ...(process.env["TURSO_AUTH_TOKEN"]
+      ? { authToken: process.env["TURSO_AUTH_TOKEN"] }
+      : {}),
   },
 });
