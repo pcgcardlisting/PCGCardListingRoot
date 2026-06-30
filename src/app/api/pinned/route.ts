@@ -55,7 +55,11 @@ export async function DELETE(req: NextRequest) {
     where: { userId: session.user.id },
     orderBy: { position: "asc" },
   });
-  await Promise.all(remaining.map((p, i) => prisma.pinnedCard.update({ where: { id: p.id }, data: { position: i } })));
+  await Promise.all(
+    remaining.map((p: { id: string }, i: number) =>
+      prisma.pinnedCard.update({ where: { id: p.id }, data: { position: i } })
+    )
+  );
 
   return NextResponse.json({ success: true });
 }
