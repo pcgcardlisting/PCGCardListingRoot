@@ -70,6 +70,7 @@ model Listing {
   imageUrl    String?
   tcgioId     String?
   rarity      String?
+  collection  String   @default("pokemon") // "pokemon" | "onepiece"
   listingType String   @default("sell") // "sell" | "trade"
   price       Float?
   wantedCard  String?

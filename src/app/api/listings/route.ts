@@ -6,12 +6,14 @@ import { prisma } from "@/lib/db";
 export async function GET(req: NextRequest) {
   const type = req.nextUrl.searchParams.get("type"); // "sell" | "trade" | null
   const search = req.nextUrl.searchParams.get("q") || "";
+  const collection = req.nextUrl.searchParams.get("collection"); // "pokemon" | "onepiece" | null
 
   const listings = await prisma.listing.findMany({
     where: {
       isActive: true,
       ...(type ? { listingType: type } : {}),
       ...(search ? { cardName: { contains: search } } : {}),
+      ...(collection ? { collection } : {}),
     },
     include: { user: { select: { id: true, name: true, image: true } } },
     orderBy: { createdAt: "desc" },

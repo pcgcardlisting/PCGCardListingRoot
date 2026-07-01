@@ -6,8 +6,8 @@ import { SessionProvider } from "./providers";
 const geist = Geist({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "PCG Card Listing - Pokemon Card Price Tracker",
-  description: "Track Pokemon TCG card prices from TCGPlayer and eBay in real-time",
+  title: "Craft-A-Holic Mom — Handmade Crafts & TCG Card Collector",
+  description: "Handmade resin crafts, custom tumblers, sublimation prints & TCG card marketplace for Pokémon and One Piece collectors.",
 };
 
 export default function RootLayout({

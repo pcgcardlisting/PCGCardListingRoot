@@ -20,9 +20,10 @@ interface Listing {
 
 interface Props {
   currentUserId?: string;
+  collectionFilter?: "all" | "pokemon" | "onepiece";
 }
 
-export default function Marketplace({ currentUserId }: Props) {
+export default function Marketplace({ currentUserId, collectionFilter = "all" }: Props) {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "sell" | "trade">("all");
@@ -35,11 +36,12 @@ export default function Marketplace({ currentUserId }: Props) {
       const params = new URLSearchParams();
       if (filter !== "all") params.set("type", filter);
       if (search) params.set("q", search);
+      if (collectionFilter !== "all") params.set("collection", collectionFilter);
       const res = await fetch(`/api/listings?${params}`);
       const data = await res.json();
       setListings(data.listings || []);
     } finally { setLoading(false); }
-  }, [filter, search]);
+  }, [filter, search, collectionFilter]);
 
   useEffect(() => { fetchListings(); }, [fetchListings]);
 

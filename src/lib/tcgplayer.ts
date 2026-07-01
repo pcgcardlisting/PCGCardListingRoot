@@ -59,6 +59,10 @@ export interface TCGPrice {
 // ---------- Main search — uses pokemon-tcg.io (free, real data) ----------
 
 export async function searchTCGCards(query: string, limit = 20): Promise<TCGCard[]> {
+  // Detect One Piece queries — route to One Piece Card Game API
+  const isOnePiece = isOnePieceQuery(query);
+  if (isOnePiece) return searchOnePieceCards(query, limit);
+
   // First try TCGPlayer if keys are configured
   if (process.env.TCGPLAYER_PUBLIC_KEY && process.env.TCGPLAYER_PUBLIC_KEY !== "your-tcgplayer-public-key") {
     try {
@@ -76,6 +80,85 @@ export async function searchTCGCards(query: string, limit = 20): Promise<TCGCard
 
   // Always use pokemon-tcg.io as the search engine (free, no key, real data)
   return searchPokemonTCGio(query, limit);
+}
+
+// ── One Piece detection ──────────────────────────────────────────────────────
+const ONE_PIECE_KEYWORDS = [
+  "luffy", "zoro", "nami", "sanji", "chopper", "robin", "franky", "brook", "jinbe",
+  "shanks", "whitebeard", "kaido", "big mom", "ace", "sabo", "law", "hancock",
+  "one piece", "op-01", "op-02", "op-03", "op-04", "op-05", "op-06", "op-07", "op-08",
+  "op-09", "op-10", "romance dawn", "paramount war", "pillars of strength",
+  "kingdoms of intrigue", "new four emperors", "wings of the captain",
+  "five hundred years in the future", "emperors in the new world",
+];
+
+function isOnePieceQuery(query: string): boolean {
+  const q = query.toLowerCase();
+  return ONE_PIECE_KEYWORDS.some((kw) => q.includes(kw));
+}
+
+// One Piece TCG search via optcg-excel unofficial API (community data)
+async function searchOnePieceCards(query: string, limit: number): Promise<TCGCard[]> {
+  try {
+    const params = new URLSearchParams({ name: query });
+    const response = await fetch(`https://apiv2.optcgapi.com/cards?${params}`, {
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const cards = (data.data || data || []).slice(0, limit);
+      return cards.map((card: OnePieceCard, idx: number) => ({
+        productId: hashCardId(card.id || card.code || `op-${idx}`) + idx,
+        tcgioId: card.id || card.code,
+        name: card.name,
+        imageUrl: card.images?.large || card.image || card.images?.small || "",
+        categoryId: 2,
+        groupId: 200,
+        url: `https://en.onepiece-cardgame.com/cardlist/?series=${encodeURIComponent(card.set || "")}`,
+        modifiedOn: new Date().toISOString(),
+        setName: card.set || card.expansion || "One Piece TCG",
+        number: card.number || card.code,
+        supertype: card.type || "Character",
+        rarity: card.rarity,
+      }));
+    }
+  } catch { /* fall through to static mock */ }
+
+  // Static fallback with real One Piece card images
+  return getOnePieceMockCards(query);
+}
+
+interface OnePieceCard {
+  id?: string;
+  code?: string;
+  name: string;
+  images?: { small?: string; large?: string };
+  image?: string;
+  set?: string;
+  expansion?: string;
+  number?: string;
+  type?: string;
+  rarity?: string;
+}
+
+function getOnePieceMockCards(query: string): TCGCard[] {
+  const all: TCGCard[] = [
+    { productId: 2001, tcgioId: "OP01-001", name: "Monkey D. Luffy", imageUrl: "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-001.png", categoryId: 2, groupId: 200, url: "https://en.onepiece-cardgame.com/cardlist/", modifiedOn: new Date().toISOString(), setName: "Romance Dawn", number: "OP01-001", supertype: "Leader", rarity: "L" },
+    { productId: 2002, tcgioId: "OP01-002", name: "Roronoa Zoro", imageUrl: "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-025.png", categoryId: 2, groupId: 200, url: "https://en.onepiece-cardgame.com/cardlist/", modifiedOn: new Date().toISOString(), setName: "Romance Dawn", number: "OP01-025", supertype: "Character", rarity: "SR" },
+    { productId: 2003, tcgioId: "OP01-003", name: "Nami", imageUrl: "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-016.png", categoryId: 2, groupId: 200, url: "https://en.onepiece-cardgame.com/cardlist/", modifiedOn: new Date().toISOString(), setName: "Romance Dawn", number: "OP01-016", supertype: "Character", rarity: "R" },
+    { productId: 2004, tcgioId: "OP01-004", name: "Sanji", imageUrl: "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-013.png", categoryId: 2, groupId: 200, url: "https://en.onepiece-cardgame.com/cardlist/", modifiedOn: new Date().toISOString(), setName: "Romance Dawn", number: "OP01-013", supertype: "Character", rarity: "SR" },
+    { productId: 2005, tcgioId: "OP02-001", name: "Portgas D. Ace", imageUrl: "https://en.onepiece-cardgame.com/images/cardlist/card/OP02-013.png", categoryId: 2, groupId: 201, url: "https://en.onepiece-cardgame.com/cardlist/", modifiedOn: new Date().toISOString(), setName: "Paramount War", number: "OP02-013", supertype: "Character", rarity: "SR" },
+    { productId: 2006, tcgioId: "OP02-002", name: "Whitebeard", imageUrl: "https://en.onepiece-cardgame.com/images/cardlist/card/OP02-001.png", categoryId: 2, groupId: 201, url: "https://en.onepiece-cardgame.com/cardlist/", modifiedOn: new Date().toISOString(), setName: "Paramount War", number: "OP02-001", supertype: "Leader", rarity: "L" },
+    { productId: 2007, tcgioId: "OP03-001", name: "Trafalgar D. Water Law", imageUrl: "https://en.onepiece-cardgame.com/images/cardlist/card/OP03-099.png", categoryId: 2, groupId: 202, url: "https://en.onepiece-cardgame.com/cardlist/", modifiedOn: new Date().toISOString(), setName: "Pillars of Strength", number: "OP03-099", supertype: "Character", rarity: "SR" },
+    { productId: 2008, tcgioId: "OP04-001", name: "Shanks", imageUrl: "https://en.onepiece-cardgame.com/images/cardlist/card/OP04-001.png", categoryId: 2, groupId: 203, url: "https://en.onepiece-cardgame.com/cardlist/", modifiedOn: new Date().toISOString(), setName: "Kingdoms of Intrigue", number: "OP04-001", supertype: "Leader", rarity: "L" },
+    { productId: 2009, tcgioId: "OP05-001", name: "Kaido", imageUrl: "https://en.onepiece-cardgame.com/images/cardlist/card/OP05-001.png", categoryId: 2, groupId: 204, url: "https://en.onepiece-cardgame.com/cardlist/", modifiedOn: new Date().toISOString(), setName: "Awakening of the New Era", number: "OP05-001", supertype: "Leader", rarity: "L" },
+    { productId: 2010, tcgioId: "OP06-001", name: "Nico Robin", imageUrl: "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-024.png", categoryId: 2, groupId: 200, url: "https://en.onepiece-cardgame.com/cardlist/", modifiedOn: new Date().toISOString(), setName: "Romance Dawn", number: "OP01-024", supertype: "Character", rarity: "R" },
+  ];
+  const q = query.toLowerCase();
+  const filtered = all.filter((c) => c.name.toLowerCase().includes(q));
+  return filtered.length > 0 ? filtered : all;
 }
 
 async function searchPokemonTCGio(query: string, limit: number): Promise<TCGCard[]> {
