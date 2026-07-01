@@ -1,5 +1,6 @@
 // Product bucket data — edit this file to update your shop categories and items
 // Images: replace the imageUrl with a real URL (upload to imgur, cloudinary, etc.)
+// To update the TikTok URL: change TIKTOK_URL below and re-deploy
 
 export interface Product {
   id: string;
@@ -21,8 +22,7 @@ export interface ProductBucket {
 }
 
 // ─── YOUR TIKTOK SHOP LINK ───────────────────────────────────────────────────
-// Replace with your real TikTok URL
-export const TIKTOK_URL = "https://www.tiktok.com/@YOUR_TIKTOK_HERE";
+export const TIKTOK_URL = "https://vt.tiktok.com/ZS96gtMKR7M1e-nbD0v/";
 
 // ─── PRODUCT BUCKETS ─────────────────────────────────────────────────────────
 // Add, remove or edit buckets and products here

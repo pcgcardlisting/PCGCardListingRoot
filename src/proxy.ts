@@ -4,15 +4,21 @@ import { NextResponse } from "next/server";
 export default auth((req) => {
   const { pathname } = req.nextUrl;
   const isLoggedIn = !!req.auth;
+  const role = (req.auth?.user as { role?: string })?.role;
 
-  const protectedRoutes = ["/dashboard"];
-  const authRoutes = ["/login", "/register"];
+  // Protect /admin — must be logged in AND have ADMIN role
+  if (pathname.startsWith("/admin")) {
+    if (!isLoggedIn) return NextResponse.redirect(new URL("/login", req.url));
+    if (role !== "ADMIN") return NextResponse.redirect(new URL("/dashboard", req.url));
+  }
 
-  if (protectedRoutes.some((r) => pathname.startsWith(r)) && !isLoggedIn) {
+  // Protect /dashboard — must be logged in
+  if (pathname.startsWith("/dashboard") && !isLoggedIn) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  if (authRoutes.includes(pathname) && isLoggedIn) {
+  // Redirect logged-in users away from auth pages
+  if (["/login", "/register"].includes(pathname) && isLoggedIn) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 

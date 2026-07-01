@@ -11,6 +11,7 @@ interface User {
   name?: string | null;
   email?: string | null;
   image?: string | null;
+  role?: string;
 }
 
 interface WatchlistItem {
@@ -131,7 +132,7 @@ export default function DashboardClient({ user }: { user: User }) {
             Price Tracker
           </span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             {user.image && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -139,6 +140,14 @@ export default function DashboardClient({ user }: { user: User }) {
             )}
             <span className="text-sm text-gray-300 hidden sm:block">{user.name || user.email}</span>
           </div>
+          {(user as { role?: string }).role === "ADMIN" && (
+            <a
+              href="/admin"
+              className="text-xs bg-red-900/40 text-red-300 border border-red-800 hover:bg-red-900/60 px-2.5 py-1 rounded-full font-bold transition-colors"
+            >
+              🛡️ Admin
+            </a>
+          )}
           <button
             onClick={() => signOut({ callbackUrl: "/" })}
             className="text-sm text-gray-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-800"
